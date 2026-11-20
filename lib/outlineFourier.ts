@@ -27,8 +27,14 @@ export function buildOutlineModels(outlines: Point2[][]): FourierModel[] {
   });
 }
 
-/** Terms to draw for one model given the global slider value. */
+/**
+ * Terms to draw for one model given the global slider value.
+ *
+ * Always odd for outlines: terms are ordered 0, ±1, ±2, …, so an odd count keeps every
+ * frequency's +k and −k together. Open strokes arrive as exact out-and-back curves
+ * (c_k = c_−k); keeping the pairs keeps them single retraced lines instead of loops.
+ */
 export function termCapFor(model: FourierModel, maxTerms: number): number {
   if (model.weight === undefined) return maxTerms;
-  return Math.max(MIN_OUTLINE_TERMS, Math.round(maxTerms * model.weight));
+  return Math.max(MIN_OUTLINE_TERMS, Math.round(maxTerms * model.weight)) | 1;
 }

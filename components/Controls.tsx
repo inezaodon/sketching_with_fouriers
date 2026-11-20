@@ -42,7 +42,7 @@ export function Controls() {
         <input
           type="range"
           min={8}
-          max={320}
+          max={500}
           value={maxTerms}
           onChange={(e) => setMaxTerms(+e.target.value)}
           className="mt-2 w-full accent-cyan-600"

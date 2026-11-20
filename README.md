@@ -32,6 +32,17 @@ longest outline's terms with shorter ones scaled down, so detail stays even acro
 
 ![Stitched path vs separate outlines at 139 and 20 terms](docs/outlines-vs-stitched.png)
 
+### Strokes, not pixel boundaries
+
+Outlines come from tracing the thinned Canny edges as **strokes** ([`cv_neon/strokes.py`](cv_neon/strokes.py)),
+not from `findContours`, whose pixel-boundary walk turns every open stroke into a thin loop that puffs into an
+ellipse at low term counts. Specks are dropped, strokes carry straight through junctions, the pixel staircase is
+smoothed along each stroke, and open strokes are encoded as an **exact out-and-back**. That makes each stroke's
+coefficients come in equal ±k pairs, and since terms are always kept in ±k pairs, a stroke stays a single line at
+every term count.
+
+![Before (pixel-boundary contours) vs after (traced strokes) at 12, 40 and 139 terms](docs/stroke-tracing.png)
+
 ## Desmos export
 
 "Copy Desmos formula" produces **one LaTeX expression** that draws every curve: the terms are flattened

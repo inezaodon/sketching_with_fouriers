@@ -8,7 +8,7 @@ const beats = [
   {
     k: "02",
     t: "Extracted path",
-    d: "OpenCV Canny → one closed curve per edge outline, resampled at even arc-length spacing (neon PNG is preview).",
+    d: "OpenCV Canny → thinned and traced into strokes, smoothed, resampled at even spacing (neon PNG is preview).",
   },
   { k: "03", t: "Fourier coefficients", d: "Each outline as complex z_j → exact DFT at its true length (no padding)." },
   { k: "04", t: "Reconstruction", d: "Lowest frequencies first; each outline’s chain of phasors redraws it." },
