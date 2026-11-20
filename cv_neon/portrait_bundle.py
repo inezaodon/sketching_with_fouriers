@@ -168,6 +168,79 @@ def _chained_canny_path(
     return _path_dict_from_pts(samp)
 
 
+def _signed_area(pts: np.ndarray) -> float:
+    x, y = pts[:, 0], pts[:, 1]
+    return 0.5 * float(np.sum(x * np.roll(y, -1) - np.roll(x, -1) * y))
+
+
+def _resample_closed_count(pts: np.ndarray, n_out: int) -> np.ndarray:
+    """Like `resample_closed_polyline`, but tolerates 2-point strokes (out-and-back)."""
+    if pts.shape[0] == 2:
+        pts = np.vstack([pts, pts[::-1]])
+    return resample_closed_polyline(pts, n_out)
+
+
+def separate_outline_paths(
+    edges: np.ndarray,
+    *,
+    min_peri: float,
+    total_points: int = 4096,
+    min_points: int = 16,
+    max_outlines: int = 120,
+) -> list[list[dict[str, float]]]:
+    """
+    One closed curve per edge outline, so each gets its own Fourier series
+    (the DrawingWithFFT approach) instead of being stitched into one path.
+
+    Stitching draws a visible jump line between every pair of features and
+    spends Fourier terms on those jumps. Kept separate, each outline is a
+    smooth closed loop and the drawing has no connecting strokes.
+
+    * RETR_CCOMP + drop holes: a closed 1-px Canny ring yields an outer and an
+      inner contour 1 px apart; keeping both would draw it twice.
+    * Points are allotted in proportion to perimeter, so every outline is
+      sampled at the same spacing and the same term fraction means the same
+      detail everywhere.
+    * Winding is normalised via the signed area so outlines all run the same
+      way round (matters for consistent epicycle direction).
+    """
+    contours, hierarchy = cv2.findContours(edges, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_NONE)
+    if not contours or hierarchy is None:
+        return []
+
+    kept: list[tuple[float, np.ndarray]] = []
+    for cnt, hh in zip(contours, hierarchy[0]):
+        if hh[3] != -1:  # hole of an outer ring
+            continue
+        pts = cnt.reshape(-1, 2).astype(np.float64)
+        if pts.shape[0] < 2:
+            continue
+        peri = float(cv2.arcLength(cnt, True))
+        if peri < min_peri:
+            continue
+        kept.append((peri, pts))
+
+    kept.sort(key=lambda kp: kp[0], reverse=True)
+    kept = kept[:max_outlines]
+    if not kept:
+        return []
+
+    total_peri = sum(p for p, _ in kept)
+    out: list[list[dict[str, float]]] = []
+    for peri, pts in kept:
+        if np.allclose(pts[0], pts[-1]):
+            pts = pts[:-1]
+        if pts.shape[0] >= 3 and _signed_area(pts) > 0:
+            pts = pts[::-1]
+        n = max(min_points, int(round(total_points * peri / total_peri)))
+        try:
+            samp = _resample_closed_count(pts, n)
+        except ValueError:
+            continue
+        out.append([{"x": round(float(x), 2), "y": round(float(y), 2)} for x, y in samp])
+    return out
+
+
 def _photo_canny_path_and_edges(
     img: np.ndarray,
     canny_low: int,
@@ -221,10 +294,12 @@ def build_portrait_bundle(
     sample_points: int = 512,
     edge_threshold: int = 105,
     min_area: float | None = None,
+    outline_points: int = 4096,
 ) -> dict[str, Any]:
     """
     Returns JSON-serializable dict with width, height, fftOrigin, path,
-    edgeMaskPngBase64, lineArtPngBase64, pathSource, lineArtPathVerify.
+    edgeMaskPngBase64, lineArtPngBase64, pathSource, lineArtPathVerify, and
+    `outlines` (one closed, arc-length-resampled curve per edge outline).
     """
     img = resize_to_max_side(bgr, max_side)
     h, w = img.shape[:2]
@@ -255,6 +330,10 @@ def build_portrait_bundle(
     edge_for_png = cv2.Canny(blurred_img, canny_low, canny_high)
 
     line_art_verify = path_source == "chainedCanny" and path_list is not None
+
+    outlines = separate_outline_paths(
+        edge_for_png, min_peri=min_peri, total_points=outline_points
+    )
 
     line_bgr = run_pipeline(
         img,
@@ -290,4 +369,5 @@ def build_portrait_bundle(
         "lineArtPngBase64": base64.b64encode(line_buf.tobytes()).decode("ascii"),
         "pathSource": path_source,
         "lineArtPathVerify": line_art_verify,
+        "outlines": outlines,
     }

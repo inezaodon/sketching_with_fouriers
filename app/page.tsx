@@ -5,10 +5,10 @@ import { ExportSection } from "@/components/ExportSection";
 import dynamic from "next/dynamic";
 import { Footer } from "@/components/Footer";
 import { Hero } from "@/components/Hero";
-import { HumorAsides } from "@/components/HumorAsides";
 import { MathCore } from "@/components/MathCore";
 import { Playground } from "@/components/Playground";
 import { PortraitGate } from "@/components/PortraitGate";
+import { SiteNav } from "@/components/SiteNav";
 import { Steps } from "@/components/Steps";
 import { Story } from "@/components/Story";
 
@@ -27,6 +27,7 @@ const EpicycleWowDynamic = dynamic(
 export default function Home() {
   return (
     <main className="relative min-h-screen overflow-x-clip bg-[var(--color-background)] text-[var(--color-foreground)]">
+      <SiteNav />
       <Hero />
       <PortraitGate>
         <Story />
@@ -36,7 +37,6 @@ export default function Home() {
         <Playground />
         <ExportSection />
         <EpicycleWowDynamic />
-        <HumorAsides />
         <Footer />
       </PortraitGate>
     </main>

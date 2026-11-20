@@ -1,6 +1,6 @@
 "use client";
 
-import { epicyclePosition } from "@/lib/fourier";
+import { curvesToFittedPath, reconstructCurves, useActiveCurves } from "@/lib/activeCurves";
 import { useSketchStore } from "@/lib/store";
 import { motion } from "framer-motion";
 import { useMemo } from "react";
@@ -22,74 +22,21 @@ function CompareFrame({ tone, children }: { tone: "light" | "dark"; children: Re
 }
 
 export function CompareSection() {
-  const model = useSketchStore((s) => s.model);
-  const sourcePath = useSketchStore((s) => s.sourcePath);
+  const { source, models, outlineMode } = useActiveCurves();
   const maxTerms = useSketchStore((s) => s.maxTerms);
   const originalImageSrc = useSketchStore((s) => s.originalImageSrc);
   const lineArtDataUrl = useSketchStore((s) => s.lineArtDataUrl);
 
-  /** Same centering + scale as the DFT polyline so the trace sits in the middle of the 100×100 viewBox. */
-  const fourierSvg = useMemo(() => {
-    if (!model) return "";
-    const n = 200;
-    const samples: { x: number; y: number }[] = [];
-    for (let i = 0; i <= n; i++) {
-      const t = (i / n) * Math.PI * 2;
-      const p = epicyclePosition(model, t, maxTerms);
-      samples.push({ x: p.x, y: p.y });
-    }
-    let minX = Infinity;
-    let minY = Infinity;
-    let maxX = -Infinity;
-    let maxY = -Infinity;
-    for (const p of samples) {
-      minX = Math.min(minX, p.x);
-      minY = Math.min(minY, p.y);
-      maxX = Math.max(maxX, p.x);
-      maxY = Math.max(maxY, p.y);
-    }
-    const bw = maxX - minX || 1;
-    const bh = maxY - minY || 1;
-    const s = 80 / Math.max(bw, bh);
-    const cx = (minX + maxX) / 2;
-    const cy = (minY + maxY) / 2;
-    const pts: string[] = [];
-    samples.forEach((p, i) => {
-      const x = 50 + (p.x - cx) * s;
-      const y = 50 + (p.y - cy) * s;
-      pts.push(`${i === 0 ? "M" : "L"}${x.toFixed(1)},${y.toFixed(1)}`);
-    });
-    return pts.join(" ");
-  }, [model, maxTerms]);
-
-  const sourceSvg = useMemo(() => {
-    if (!sourcePath.length) return "";
-    let minX = Infinity;
-    let minY = Infinity;
-    let maxX = -Infinity;
-    let maxY = -Infinity;
-    for (const p of sourcePath) {
-      minX = Math.min(minX, p.x);
-      minY = Math.min(minY, p.y);
-      maxX = Math.max(maxX, p.x);
-      maxY = Math.max(maxY, p.y);
-    }
-    const bw = maxX - minX || 1;
-    const bh = maxY - minY || 1;
-    const s = 80 / Math.max(bw, bh);
-    const pts: string[] = [];
-    sourcePath.forEach((p, i) => {
-      const x = 50 + (p.x - (minX + maxX) / 2) * s;
-      const y = 50 + (p.y - (minY + maxY) / 2) * s;
-      pts.push(`${i === 0 ? "M" : "L"}${x.toFixed(1)},${y.toFixed(1)}`);
-    });
-    return pts.join(" ") + " Z";
-  }, [sourcePath]);
+  const sourceSvg = useMemo(() => curvesToFittedPath(source, 100, 10, true), [source]);
+  const fourierSvg = useMemo(
+    () => curvesToFittedPath(reconstructCurves(models, maxTerms, 200), 100, 10),
+    [models, maxTerms],
+  );
 
   return (
     <section
       id="pipeline-four-up"
-      className="mx-auto max-w-6xl scroll-mt-24 px-4 py-24"
+      className="mx-auto max-w-6xl scroll-mt-20 px-4 py-24"
       aria-labelledby="pipeline-four-heading"
     >
       <motion.p
@@ -124,19 +71,26 @@ export function CompareSection() {
         </li>
         <li>
           <span className="font-medium text-slate-800">Neon (OpenCV)</span> — blur, Canny edges, contour cleanup, then
-          glow / HSV styling in Python. It is a <em>preview</em> of line energy; the DFT path is built separately from
-          stitched Canny chains so eyes, nose, and outline can all contribute.
+          glow / HSV styling in Python. It is a <em>preview</em> of line energy; the Fourier input comes from the same
+          Canny edges, so eyes, nose, and outline all contribute.
         </li>
         <li>
-          <span className="font-medium text-slate-800">DFT polyline</span> — the exact closed polyline returned by the
-          portrait bundle: many contours from <span className="font-mono text-slate-800">RETR_LIST</span>, stitched by
-          nearest-neighbour endpoints, resampled to fixed arc-length samples. Those <span className="font-mono text-slate-800">(x, y)</span>{" "}
-          points become complex numbers <span className="font-mono text-slate-800">z_j</span> for the FFT.
+          <span className="font-medium text-slate-800">Traced outlines</span> —{" "}
+          {outlineMode ? (
+            <>
+              every edge outline as its own closed curve, resampled at the same arc-length spacing. Keeping them separate
+              means no jump lines between features.
+            </>
+          ) : (
+            <>all edge contours stitched by nearest-neighbour endpoints into one closed loop (jump lines included).</>
+          )}{" "}
+          Each <span className="font-mono text-slate-800">(x, y)</span> point becomes a complex number{" "}
+          <span className="font-mono text-slate-800">z_j = x_j + i y_j</span>.
         </li>
         <li>
-          <span className="font-medium text-slate-800">Epicycle trace</span> — one full parameter turn of the sparse sum
-          of rotating vectors whose amplitudes and phases come from the browser DFT. It should match the polyline when
-          enough terms are kept; fewer terms smooth the sketch.
+          <span className="font-medium text-slate-800">Epicycle trace</span> — one full turn of each curve’s sum of
+          rotating vectors, with amplitudes and phases from the browser DFT. With enough terms it matches the tracing;
+          fewer terms smooth it into a looser sketch.
         </li>
       </motion.ol>
 
@@ -167,7 +121,7 @@ export function CompareSection() {
         </div>
         <div className="min-w-0 rounded-2xl border border-stone-200 bg-white p-3 shadow-sm">
           <div className="text-center font-mono text-[10px] uppercase tracking-wider text-slate-500">
-            3 · DFT polyline
+            3 · Traced {outlineMode ? "outlines" : "loop"}
           </div>
           <CompareFrame tone="light">
             <svg viewBox="0 0 100 100" className="h-full w-full text-emerald-700/90" preserveAspectRatio="xMidYMid meet">

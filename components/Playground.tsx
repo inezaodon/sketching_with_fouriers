@@ -9,10 +9,10 @@ import { motion } from "framer-motion";
 export function Playground() {
   const originalImageSrc = useSketchStore((s) => s.originalImageSrc);
   const lineArtDataUrl = useSketchStore((s) => s.lineArtDataUrl);
-  const canvas = useResponsiveCanvasSize({ maxWidth: 560, aspect: 560 / 400, minWidth: 280, minHeight: 200 });
+  const { ref: canvasRef, width: canvasW, height: canvasH } = useResponsiveCanvasSize({ maxWidth: 560, aspect: 560 / 400, minWidth: 280, minHeight: 200 });
 
   return (
-    <section id="experiment" className="mx-auto max-w-6xl scroll-mt-24 px-4 py-24">
+    <section id="experiment" className="mx-auto max-w-6xl scroll-mt-20 px-4 py-24">
       <motion.div
         initial={{ opacity: 0, y: 14 }}
         whileInView={{ opacity: 1, y: 0 }}
@@ -37,25 +37,23 @@ export function Playground() {
           <ol className="list-decimal space-y-2 pl-5 text-left sm:mx-auto sm:max-w-xl sm:pl-6 sm:text-left">
             <li>
               <strong className="text-slate-800">Server bundle</strong> — uploading calls{" "}
-              <code className="text-slate-800">/api/portrait_pipeline</code>: OpenCV builds the neon PNG, Canny edge
-              mask, and the stitched closed polyline the FFT will eat.
+              <code className="text-slate-800">/api/portrait_pipeline</code>: OpenCV builds the neon PNG, the Canny edge
+              mask, and the traced outlines (plus a stitched single loop for comparison).
             </li>
             <li>
-              <strong className="text-slate-800">Browser FFT</strong> — the app resamples the path, subtracts the FFT
-              origin (image centre on upload), zero-pads, and keeps the strongest frequency bins for the epicycle sum.
+              <strong className="text-slate-800">Browser DFT</strong> — each outline is centred on its centroid and
+              transformed at its true length; the Terms slider decides how many frequencies each one keeps.
             </li>
             <li>
-              <strong className="text-slate-800">Controls</strong> — terms, speed, line weight, feature regions, edge
-              threshold (next upload), and vector / path / circle toggles all recompute or redraw immediately.
+              <strong className="text-slate-800">Controls</strong> — terms, draw mode, speed, line weight, edge threshold
+              (next upload), and vector / path / circle toggles all redraw immediately.
             </li>
             <li>
               <strong className="text-slate-800">Export</strong> —{" "}
               <a href="#export" className="font-medium text-cyan-800 underline-offset-2 hover:underline">
-                Desmos-ready equations
+                one-line Desmos formula
               </a>{" "}
-              and plain text come from the current sparse model (defaults include{" "}
-              <span className="font-mono text-slate-800">139</span> terms). Legacy worker notes live in{" "}
-              <code className="text-slate-800">Downloads/fourier-worker.js</code>.
+              follows whatever you set here.
             </li>
           </ol>
         </div>
@@ -106,10 +104,10 @@ export function Playground() {
         >
           <div className="flex w-full min-w-0 flex-col items-center gap-2">
             <p className="font-mono text-[10px] uppercase tracking-wider text-slate-500">Fourier sketch (live)</p>
-            <div ref={canvas.ref} className="w-full min-w-0 max-w-[560px]">
+            <div ref={canvasRef} className="w-full min-w-0 max-w-[560px]">
               <FourierVisualizer
-                width={canvas.width}
-                height={canvas.height}
+                width={canvasW}
+                height={canvasH}
                 theme="light"
                 className="w-full max-w-full rounded-lg"
               />

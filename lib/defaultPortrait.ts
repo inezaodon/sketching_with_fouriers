@@ -19,12 +19,13 @@ export async function reloadDefaultPortrait(): Promise<void> {
     samplePoints: 512,
   });
   if (!bundle) throw new Error("Portrait pipeline unavailable (Python/OpenCV).");
-  const { path, fftOrigin, width, height, edgeMaskDataUrl, lineArtDataUrl } = bundle;
+  const { path, fftOrigin, width, height, edgeMaskDataUrl, lineArtDataUrl, outlines } = bundle;
   useSketchStore.getState().setSourcePath(path, {
     fftOrigin,
     imageSize: { w: width, h: height },
     lineArtDataUrl,
     edgeMaskDataUrl,
+    outlines,
   });
   useSketchStore.getState().setOriginalImageSrc(DEFAULT_PORTRAIT_PUBLIC_PATH);
 }

@@ -8,10 +8,10 @@ const beats = [
   {
     k: "02",
     t: "Extracted path",
-    d: "OpenCV Canny (RETR_LIST) → stitch contours → one closed polyline → resampled DFT samples (neon PNG is preview).",
+    d: "OpenCV Canny → one closed curve per edge outline, resampled at even arc-length spacing (neon PNG is preview).",
   },
-  { k: "03", t: "Fourier coefficients", d: "Complex z_j, zero-pad, FFT, sparse magnitude pick." },
-  { k: "04", t: "Reconstruction", d: "Rotating phasors chained; tip redraws the loop." },
+  { k: "03", t: "Fourier coefficients", d: "Each outline as complex z_j → exact DFT at its true length (no padding)." },
+  { k: "04", t: "Reconstruction", d: "Lowest frequencies first; each outline’s chain of phasors redraws it." },
 ];
 
 export function Steps() {
@@ -31,10 +31,8 @@ export function Steps() {
         viewport={{ once: true }}
         className="mx-auto mt-4 max-w-2xl text-center text-sm leading-relaxed text-slate-600"
       >
-        Same layout spirit as the old Fourier Studio: sketch, OpenCV contour mask + path, neon line art, and the image
-        stack —{" "}
-        <span className="font-medium text-slate-800">reorder panels</span> with the arrows (like shuffle-left / right).
-        The hero stays clean; the heavy drawing lives here and in the playground.
+        The live sketch, the edge mask with the traced curves, the neon line art, and the photo with its overlay —{" "}
+        <span className="font-medium text-slate-800">reorder panels</span> with the arrows.
       </motion.p>
 
       <VisualDeck />

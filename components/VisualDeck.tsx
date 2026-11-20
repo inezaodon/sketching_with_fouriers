@@ -2,6 +2,7 @@
 
 import { FourierVisualizer } from "@/components/FourierVisualizer";
 import { useResponsiveCanvasSize } from "@/hooks/useResponsiveCanvasSize";
+import { curvesToPixelPath, useActiveCurves } from "@/lib/activeCurves";
 import { useSketchStore } from "@/lib/store";
 import { motion } from "framer-motion";
 import { ChevronLeft, ChevronRight, GripVertical } from "lucide-react";
@@ -12,19 +13,12 @@ export type DeckKey = "sketch" | "contour" | "line" | "image";
 const META: Record<DeckKey, { title: string; subtle: string }> = {
   sketch: {
     title: "Sketch",
-    subtle: "Live epicycle sum — same DFT path as the playground (chained Canny edges, image-center origin)",
+    subtle: "Live epicycle sum — same curves and settings as the playground",
   },
-  contour: { title: "Contour", subtle: "Canny edge preview + DFT polyline in processing coordinates" },
+  contour: { title: "Contour", subtle: "Canny edges with the traced curves on top" },
   line: { title: "Line art", subtle: "Neon glow from the same OpenCV portrait bundle as the path" },
-  image: { title: "Image", subtle: "Input raster at processing aspect + overlaid DFT loop" },
+  image: { title: "Image", subtle: "The photo with the traced curves overlaid" },
 };
-
-/** Path in raster pixel coordinates (matches `lastImageSize` / edge mask). */
-function pathToSvgPixelD(path: { x: number; y: number }[], close: boolean) {
-  if (!path.length) return "";
-  const pts = path.map((p, i) => `${i === 0 ? "M" : "L"}${p.x.toFixed(2)},${p.y.toFixed(2)}`);
-  return pts.join(" ") + (close ? " Z" : "");
-}
 
 function DeckCard({
   deckKey,
@@ -97,13 +91,13 @@ export function VisualDeck() {
     minWidth: 220,
     minHeight: 150,
   });
-  const sourcePath = useSketchStore((s) => s.sourcePath);
+  const { source } = useActiveCurves();
   const originalImageSrc = useSketchStore((s) => s.originalImageSrc);
   const lineArtDataUrl = useSketchStore((s) => s.lineArtDataUrl);
   const edgeMaskDataUrl = useSketchStore((s) => s.edgeMaskDataUrl);
   const lastImageSize = useSketchStore((s) => s.lastImageSize);
 
-  const pathPixelD = useMemo(() => pathToSvgPixelD(sourcePath, true), [sourcePath]);
+  const pathPixelD = useMemo(() => curvesToPixelPath(source, true), [source]);
   const procW = lastImageSize?.w ?? 0;
   const procH = lastImageSize?.h ?? 0;
   const hasProcSize = procW > 0 && procH > 0;
@@ -186,8 +180,7 @@ export function VisualDeck() {
                 </svg>
               )}
               <p className="mt-2 px-4 text-center text-[11px] text-slate-600">
-                Canny edge image from the bundle. Cyan overlay is the same resampled closed path the browser FFT uses
-                (chained <span className="font-mono">RETR_LIST</span> edges when that strategy wins).
+                Canny edge image from the bundle. Cyan overlay is exactly what the browser Fourier-transforms.
               </p>
             </div>
           )}
@@ -206,8 +199,8 @@ export function VisualDeck() {
                 </div>
               )}
               <p className="absolute bottom-2 left-2 right-2 text-center text-[11px] text-slate-300">
-                Same Python bundle as contour: blur → Canny → neon / glow. The DFT path is built from stitched Canny
-                chains, not only this neon’s outer shell.
+                Same Python bundle as contour: blur → Canny → neon glow. Display only — the Fourier input is the
+                traced outlines.
               </p>
             </div>
           )}
@@ -245,7 +238,7 @@ export function VisualDeck() {
                 <p className="p-6 text-center text-xs text-slate-500">Original image appears after the portrait loads…</p>
               )}
               <p className="mt-2 px-4 pb-2 text-center text-[11px] text-slate-600">
-                Raster at processing aspect ratio; cyan overlay is the same resampled loop passed to the FFT.
+                Raster at processing aspect ratio; cyan overlay is what the Fourier series reconstruct.
               </p>
             </div>
           )}

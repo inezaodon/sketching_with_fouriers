@@ -10,6 +10,10 @@ export function Controls() {
   const setMaxTerms = useSketchStore((s) => s.setMaxTerms);
   const featureRegions = useSketchStore((s) => s.featureRegions);
   const setFeatureRegions = useSketchStore((s) => s.setFeatureRegions);
+  const drawMode = useSketchStore((s) => s.drawMode);
+  const setDrawMode = useSketchStore((s) => s.setDrawMode);
+  const outlineCount = useSketchStore((s) => s.outlineModels.length);
+  const outlinesActive = drawMode === "outlines" && outlineCount > 0;
   const speed = useSketchStore((s) => s.speed);
   const setSpeed = useSketchStore((s) => s.setSpeed);
   const edgeThreshold = useSketchStore((s) => s.edgeThreshold);
@@ -44,8 +48,42 @@ export function Controls() {
           className="mt-2 w-full accent-cyan-600"
         />
         <div className="mt-1 font-mono text-sm text-cyan-800">{maxTerms}</div>
+        {outlinesActive && (
+          <p className="mt-1 text-[11px] leading-snug text-slate-600">
+            Terms for the longest outline; shorter outlines get proportionally fewer, so detail is even across the
+            drawing.
+          </p>
+        )}
       </div>
       <div>
+        <label className="text-xs font-medium uppercase tracking-wider text-slate-500">Draw as</label>
+        <div className="mt-2 grid grid-cols-2 gap-1 rounded-lg bg-stone-100 p-1 text-xs">
+          {(
+            [
+              ["outlines", "Separate outlines"],
+              ["path", "One stitched path"],
+            ] as const
+          ).map(([mode, label]) => (
+            <button
+              key={mode}
+              type="button"
+              aria-pressed={drawMode === mode}
+              onClick={() => setDrawMode(mode)}
+              className={`rounded-md px-2 py-1.5 font-medium transition-colors ${
+                drawMode === mode ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-800"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <p className="mt-1 text-[11px] leading-snug text-slate-600">
+          {outlineCount > 0
+            ? `Separate: ${outlineCount} outlines, each with its own Fourier series, so no jump lines between features. Stitched: every edge chained into one loop.`
+            : "Separate outlines appear after the portrait pipeline runs."}
+        </p>
+      </div>
+      <div className={outlinesActive ? "pointer-events-none opacity-40" : undefined} aria-disabled={outlinesActive}>
         <label className="text-xs font-medium uppercase tracking-wider text-slate-500">Feature regions</label>
         <input
           type="range"
@@ -54,6 +92,7 @@ export function Controls() {
           step={1}
           value={featureRegions}
           onChange={(e) => setFeatureRegions(+e.target.value)}
+          disabled={outlinesActive}
           className="mt-2 w-full accent-teal-600"
         />
         <p className="mt-1 text-[11px] leading-snug text-slate-600">
@@ -145,15 +184,18 @@ export function Controls() {
                 setMsg("Portrait pipeline failed (install Python deps: pip install -r requirements.txt, then restart dev).");
                 return;
               }
-              const { path, fftOrigin, width, height, edgeMaskDataUrl, lineArtDataUrl, pathSource } = bundle;
+              const { path, fftOrigin, width, height, edgeMaskDataUrl, lineArtDataUrl, pathSource, outlines } = bundle;
               setSourcePath(path, {
                 fftOrigin,
                 imageSize: { w: width, h: height },
                 lineArtDataUrl,
                 edgeMaskDataUrl,
+                outlines,
               });
               setMsg(
-                pathSource === "chainedCanny"
+                outlines.length > 0
+                  ? `Fourier sketch: ${outlines.length} edge outlines, one Fourier series each.`
+                  : pathSource === "chainedCanny"
                   ? "Fourier sketch: all Canny edge chains stitched (eyes, nose, mouth, hair, outline), then DFT + epicycle."
                   : pathSource === "photoCanny"
                     ? "Fourier sketch: chained Canny failed; using merged-blob photo Canny fallback. Try edge threshold."
