@@ -76,10 +76,12 @@ export function MathCore() {
         <h3 className="font-heading text-lg font-semibold text-slate-900">From pixels to complex samples</h3>
         <p className="mt-3 text-sm leading-relaxed text-slate-600">
           The <strong>portrait bundle</strong> runs on the server: OpenCV blur → Canny →{" "}
-          <span className="font-mono text-slate-800">findContours</span>, so eyes, nose, mouth, and jaw come back as
-          separate outlines. Each one is resampled at the same arc-length spacing and kept as its{" "}
-          <strong>own closed curve</strong> <span className="font-mono text-slate-800">z_j</span> — no stitching, so
-          no jump lines between features. A separate neon pass is only for display.
+          thinning to a 1-px skeleton, which is then traced into <strong>strokes</strong> — carrying straight on
+          through junctions and smoothed along their length. Each stroke is resampled at the same arc-length spacing
+          and kept as its <strong>own closed curve</strong> <span className="font-mono text-slate-800">z_j</span>: loops
+          as they are, open strokes as an exact out-and-back, so their spectrum is symmetric{" "}
+          (<span className="font-mono text-slate-800">c_k = c_-k</span>) and they stay single lines at any term
+          count. No stitching, so no jump lines between features.
         </p>
         <div className="mt-6 overflow-x-auto rounded-xl border border-stone-100 bg-slate-50 p-4 text-center text-slate-900">
           <div ref={refSobel} className="katex-wrap" />

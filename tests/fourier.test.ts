@@ -44,3 +44,22 @@ test("power-of-two path still uses the FFT and matches", () => {
   assert.equal(m.fftN, 256);
   assert.ok(worst < 0.05, `full reconstruction off by ${worst}`);
 });
+
+test("out-and-back stroke stays a single line when ±k pairs are kept", () => {
+  // An open S-curve encoded as [p0..pn..p1] (what the pipeline sends for open strokes).
+  const fwd = Array.from({ length: 41 }, (_, i) => ({ x: i * 3, y: 20 * Math.sin(i / 6) }));
+  const curve = [...fwd, ...fwd.slice(1, -1).reverse()];
+  const m = buildFourierModel(curve, curve.length, curve.length);
+  for (const cap of [3, 5, 9, 21]) {
+    // odd cap = 0, ±1, …, ±K: the way back must retrace the way out, enclosing no area
+    const n = 400;
+    const pts = Array.from({ length: n }, (_, i) => epicyclePosition(m, (i / n) * 2 * Math.PI, cap));
+    let area = 0;
+    for (let i = 0; i < n; i++) {
+      const a = pts[i];
+      const b = pts[(i + 1) % n];
+      area += a.x * b.y - b.x * a.y;
+    }
+    assert.ok(Math.abs(area / 2) < 1, `cap ${cap}: encloses ${area / 2} px²`);
+  }
+});
