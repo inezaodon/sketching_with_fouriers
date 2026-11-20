@@ -5,6 +5,9 @@ export function Footer() {
     <footer className="border-t border-stone-200 bg-white/80 py-12 text-center backdrop-blur-sm">
       <p className="font-heading text-lg text-slate-800">Fourier portrait studio</p>
       <p className="mt-2 text-sm text-slate-600">Built with math, curiosity, and a bit of chaos.</p>
+      <p className="mx-auto mt-3 max-w-md font-mono text-xs text-slate-500">
+        OpenCV edge outlines · one Fourier series per outline · client-side DFT · one-line Desmos export
+      </p>
       <a
         href="https://github.com/inezaodon/sketching_with_fouriers"
         target="_blank"

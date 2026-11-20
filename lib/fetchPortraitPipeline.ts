@@ -11,6 +11,8 @@ export type PortraitPipelineResponse = {
   pathSource?: string;
   /** True when the primary chained-Canny strategy produced a path. */
   lineArtPathVerify?: boolean;
+  /** One closed, arc-length-resampled curve per edge outline (each gets its own Fourier series). */
+  outlines?: Point2[][];
   error?: string;
 };
 
@@ -34,6 +36,7 @@ export async function fetchPortraitPipeline(
   lineArtDataUrl: string;
   pathSource: string;
   lineArtPathVerify: boolean;
+  outlines: Point2[][];
 } | null> {
   const url = process.env.NEXT_PUBLIC_PORTRAIT_PIPELINE_API ?? "/api/portrait_pipeline";
   const form = new FormData();
@@ -55,6 +58,7 @@ export async function fetchPortraitPipeline(
       lineArtDataUrl: pngBase64ToDataUrl(j.lineArtPngBase64),
       pathSource: j.pathSource ?? "unknown",
       lineArtPathVerify: Boolean(j.lineArtPathVerify),
+      outlines: Array.isArray(j.outlines) ? j.outlines.filter((o) => Array.isArray(o) && o.length >= 4) : [],
     };
   } catch {
     return null;

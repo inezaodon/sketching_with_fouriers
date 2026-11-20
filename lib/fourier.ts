@@ -9,9 +9,8 @@
  * \[ z_j = (x_j - O_x) + i\,(y_j - O_y) \]
  *
  * ## Forward transform
- * Pad \(z_j\) to length \(N_{\mathrm{fft}} = 2^{\lceil \log_2 N\rceil}\) (zero fill), run **radix-2 Cooley–Tukey FFT**
- * to obtain bins \(\tilde{X}[k]\). Scale **Fourier coefficients** \(c_k = \tilde{X}[k] / N_{\mathrm{fft}}\) (matches the
- * worker’s `invN` normalization).
+ * Transform at the true length \(N\): **radix-2 Cooley–Tukey FFT** when \(N\) is a power of two, an exact DFT
+ * otherwise (no zero padding — see `dftComplex`). Scale **Fourier coefficients** \(c_k = \tilde{X}[k] / N\).
  *
  * ## Sparse spectrum
  * Bins are ranked by energy \(|c_k|^2\). Keep the top `sparseCap` indices, then **sort by \(|k|\)** (signed frequency
@@ -31,6 +30,12 @@ export type FourierModel = {
   freqs: Int16Array;
   coeffsRe: Float32Array;
   coeffsIm: Float32Array;
+  /**
+   * Outline mode only: this curve's length relative to the longest outline (0–1].
+   * The term slider is scaled by it so every outline keeps the same fraction of its
+   * modes (same detail per pixel), as in DrawingWithFFT's accuracy knob.
+   */
+  weight?: number;
 };
 
 export function nextPow2(n: number): number {
@@ -85,17 +90,58 @@ function fftComplexInPlace(re: Float32Array, im: Float32Array): void {
   }
 }
 
+/**
+ * Exact DFT for lengths that are not a power of two (O(N²), fine for N ≲ 2k).
+ *
+ * Zero-padding a closed curve up to the next power of two is NOT harmless: the padded
+ * samples sit at the origin, so the "curve" the FFT sees runs out to the shape, then
+ * jumps back to the origin and parks there. Low-term reconstructions then get pulled
+ * toward the origin. Transforming the true length keeps the curve periodic.
+ */
+function dftComplex(re: Float32Array, im: Float32Array): { re: Float32Array; im: Float32Array } {
+  const N = re.length;
+  const cosT = new Float64Array(N);
+  const sinT = new Float64Array(N);
+  for (let i = 0; i < N; i++) {
+    cosT[i] = Math.cos((2 * Math.PI * i) / N);
+    sinT[i] = Math.sin((2 * Math.PI * i) / N);
+  }
+  const outRe = new Float32Array(N);
+  const outIm = new Float32Array(N);
+  for (let k = 0; k < N; k++) {
+    let sr = 0;
+    let si = 0;
+    let idx = 0;
+    for (let j = 0; j < N; j++) {
+      // e^{-2πi kj/N} = cos − i sin
+      const c = cosT[idx];
+      const s = sinT[idx];
+      sr += re[j] * c + im[j] * s;
+      si += im[j] * c - re[j] * s;
+      idx += k;
+      if (idx >= N) idx -= N;
+    }
+    outRe[k] = sr;
+    outIm[k] = si;
+  }
+  return { re: outRe, im: outIm };
+}
+
 export function sparseTermsFromFft(
   zRe: Float32Array,
   zIm: Float32Array,
   topK: number,
 ): Omit<FourierModel, "centroid"> {
-  const N = nextPow2(zRe.length);
-  const re = new Float32Array(N);
-  const im = new Float32Array(N);
-  re.set(zRe);
-  im.set(zIm);
-  fftComplexInPlace(re, im);
+  const N = zRe.length;
+  let re: Float32Array;
+  let im: Float32Array;
+  if (N === nextPow2(N)) {
+    re = new Float32Array(zRe);
+    im = new Float32Array(zIm);
+    fftComplexInPlace(re, im);
+  } else {
+    ({ re, im } = dftComplex(zRe, zIm));
+  }
 
   const invN = 1 / N;
   const freqsArr: number[] = [];

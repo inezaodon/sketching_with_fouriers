@@ -1,6 +1,6 @@
 "use client";
 
-import { epicyclePosition } from "@/lib/fourier";
+import { boundsOf, reconstructCurves, useActiveCurves } from "@/lib/activeCurves";
 import { useSketchStore } from "@/lib/store";
 import { Line, OrbitControls } from "@react-three/drei";
 import { Canvas } from "@react-three/fiber";
@@ -8,58 +8,48 @@ import { useMemo } from "react";
 import * as THREE from "three";
 
 function Ribbon() {
-  const model = useSketchStore((s) => s.model);
+  const { models } = useActiveCurves();
   const maxTerms = useSketchStore((s) => s.maxTerms);
 
-  const points = useMemo(() => {
-    if (!model) return [] as THREE.Vector3[];
-    const n = 420;
-    const raw: THREE.Vector3[] = [];
-    for (let i = 0; i < n; i++) {
-      const t = (i / n) * Math.PI * 2;
-      const p = epicyclePosition(model, t, maxTerms);
-      raw.push(
-        new THREE.Vector3(p.x * 0.045, -p.y * 0.045, Math.sin(i * 0.055) * 1.15),
-      );
-    }
-    let minX = Infinity;
-    let maxX = -Infinity;
-    let minY = Infinity;
-    let maxY = -Infinity;
-    let minZ = Infinity;
-    let maxZ = -Infinity;
-    for (const v of raw) {
-      minX = Math.min(minX, v.x);
-      maxX = Math.max(maxX, v.x);
-      minY = Math.min(minY, v.y);
-      maxY = Math.max(maxY, v.y);
-      minZ = Math.min(minZ, v.z);
-      maxZ = Math.max(maxZ, v.z);
-    }
+  const lines = useMemo(() => {
+    const curves = reconstructCurves(models, maxTerms, 320);
+    if (curves.length === 0) return [] as THREE.Vector3[][];
+    const { minX, minY, maxX, maxY } = boundsOf(curves);
+    const k = 18 / Math.max(maxX - minX || 1, maxY - minY || 1);
     const cx = (minX + maxX) / 2;
     const cy = (minY + maxY) / 2;
-    const cz = (minZ + maxZ) / 2;
-    return raw.map((v) => new THREE.Vector3(v.x - cx, v.y - cy, v.z - cz));
-  }, [model, maxTerms]);
+    // XY follow the sketch; Z is a wave along each curve, phase-shifted per curve so outlines separate in depth.
+    return curves.map((c, j) =>
+      c.map(
+        (p, i) =>
+          new THREE.Vector3(
+            (p.x - cx) * k,
+            -(p.y - cy) * k,
+            Math.sin((i / Math.max(1, c.length - 1)) * 2 * Math.PI * 2 + j * 0.9) * 0.9,
+          ),
+      ),
+    );
+  }, [models, maxTerms]);
 
-  if (!model || points.length === 0) return null;
+  if (lines.length === 0) return null;
 
   return (
     <group>
-      <Line points={points} color="#0e7490" lineWidth={1.8} transparent opacity={0.92} />
+      {lines.map((pts, j) => (
+        <Line key={j} points={pts} color="#0e7490" lineWidth={1.6} transparent opacity={0.92} />
+      ))}
     </group>
   );
 }
 
 export function EpicycleWow3D() {
   return (
-    <section className="mx-auto max-w-6xl px-4 py-24">
+    <section id="ribbon" className="mx-auto max-w-6xl scroll-mt-20 px-4 py-24">
       <div className="text-center">
         <p className="font-mono text-xs uppercase tracking-[0.3em] text-cyan-800/80">Wow feature</p>
         <h2 className="mt-2 font-heading text-3xl font-bold text-slate-900 sm:text-4xl">3D ribbon of the same curve</h2>
         <p className="mx-auto mt-3 max-w-xl text-sm text-slate-600">
-          The same Fourier trace in 3D: XY follow the sketch, Z wiggles with arc length, and the ribbon is centered in
-          the scene. <span className="font-medium text-slate-800">Drag</span> to rotate the view, scroll or pinch to
+          The same Fourier curves in 3D: XY follow the sketch and each outline ripples in depth along its own length. <span className="font-medium text-slate-800">Drag</span> to rotate the view, scroll or pinch to
           zoom (wheel does not scroll the page while the pointer is here).
         </p>
       </div>

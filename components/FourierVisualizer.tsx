@@ -1,8 +1,9 @@
 "use client";
 
 import { epicyclePosition, type FourierModel } from "@/lib/fourier";
+import { termCapFor } from "@/lib/outlineFourier";
 import { useSketchStore } from "@/lib/store";
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 
 type Props = {
   className?: string;
@@ -12,35 +13,22 @@ type Props = {
   theme?: "light" | "dark";
 };
 
-function boundsForTerms(m: FourierModel, cap: number) {
+/** Bounds of every model's reconstructed curve at its own term cap. Costly, so computed once per change, not per frame. */
+function unionBounds(models: FourierModel[], caps: number[]) {
   let minX = Infinity;
   let minY = Infinity;
   let maxX = -Infinity;
   let maxY = -Infinity;
-  const samples = 240;
-  for (let i = 0; i <= samples; i++) {
-    const tt = (i / samples) * Math.PI * 2;
-    const p = epicyclePosition(m, tt, cap);
-    minX = Math.min(minX, p.x);
-    minY = Math.min(minY, p.y);
-    maxX = Math.max(maxX, p.x);
-    maxY = Math.max(maxY, p.y);
-  }
-  return { minX, minY, maxX, maxY };
-}
-
-function unionBounds(models: FourierModel[], cap: number) {
-  let minX = Infinity;
-  let minY = Infinity;
-  let maxX = -Infinity;
-  let maxY = -Infinity;
-  for (const m of models) {
-    const b = boundsForTerms(m, cap);
-    minX = Math.min(minX, b.minX);
-    minY = Math.min(minY, b.minY);
-    maxX = Math.max(maxX, b.maxX);
-    maxY = Math.max(maxY, b.maxY);
-  }
+  models.forEach((m, mi) => {
+    const samples = Math.min(240, Math.max(48, m.fftN));
+    for (let i = 0; i <= samples; i++) {
+      const p = epicyclePosition(m, (i / samples) * Math.PI * 2, caps[mi]);
+      if (p.x < minX) minX = p.x;
+      if (p.y < minY) minY = p.y;
+      if (p.x > maxX) maxX = p.x;
+      if (p.y > maxY) maxY = p.y;
+    }
+  });
   return { minX, minY, maxX, maxY };
 }
 
@@ -48,6 +36,8 @@ export function FourierVisualizer({ className, width, height, theme = "light" }:
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const model = useSketchStore((s) => s.model);
   const regionModels = useSketchStore((s) => s.regionModels);
+  const outlineModels = useSketchStore((s) => s.outlineModels);
+  const drawMode = useSketchStore((s) => s.drawMode);
   const featureRegions = useSketchStore((s) => s.featureRegions);
   const maxTerms = useSketchStore((s) => s.maxTerms);
   const speed = useSketchStore((s) => s.speed);
@@ -57,16 +47,19 @@ export function FourierVisualizer({ className, width, height, theme = "light" }:
   const lineWidth = useSketchStore((s) => s.lineWidth);
   const scrub = useSketchStore((s) => s.scrub);
   const tRef = useRef(0);
+  /** Trace points in model (image) coordinates, so a resize or rescale never mixes coordinate frames. */
   const traceRefs = useRef<{ x: number; y: number }[][]>([]);
 
-  const useMulti = featureRegions > 1 && regionModels.length > 0;
-  const models = useMulti ? regionModels : model ? [model] : [];
-  const modelsRef = useRef(models);
-  modelsRef.current = models;
+  const outlineMode = drawMode === "outlines" && outlineModels.length > 0;
+  const useMulti = !outlineMode && featureRegions > 1 && regionModels.length > 0;
+  const models = useMemo(
+    () => (outlineMode ? outlineModels : useMulti ? regionModels : model ? [model] : []),
+    [outlineMode, outlineModels, useMulti, regionModels, model],
+  );
 
   useEffect(() => {
-    traceRefs.current = modelsRef.current.map(() => []);
-  }, [model, regionModels, featureRegions, maxTerms, regionModels.length]);
+    traceRefs.current = models.map(() => []);
+  }, [models, maxTerms]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -81,105 +74,99 @@ export function FourierVisualizer({ className, width, height, theme = "light" }:
     canvas.style.height = `${height}px`;
     c.setTransform(dpr, 0, 0, dpr, 0, 0);
 
+    const ms = models;
+    if (ms.length === 0) return;
+    const caps = ms.map((m) => termCapFor(m, maxTerms));
+    const refN = Math.max(...ms.map((m) => m.fftN), 64);
+    const dt = ((2 * Math.PI) / refN) * speed * 0.4;
+    // One full loop of t is a complete drawing; older trace points only overdraw it.
+    const traceCap = Math.ceil((2 * Math.PI) / dt) + 2;
+
+    const w = width;
+    const h = height;
+    const { minX, minY, maxX, maxY } = unionBounds(ms, caps);
+    const pad = 28;
+    const bw = maxX - minX || 1;
+    const bh = maxY - minY || 1;
+    const scale = Math.min((w - pad * 2) / bw, (h - pad * 2) / bh);
+    const ox = w / 2 - ((minX + maxX) / 2) * scale;
+    const oy = h / 2 - ((minY + maxY) / 2) * scale;
+    const map = (p: { x: number; y: number }) => ({
+      x: ox + p.x * scale,
+      y: oy + p.y * scale,
+    });
+
+    // Outline mode is one drawing, so one ink; region / single-path modes keep per-stack hues.
+    const hueFor = (ri: number) => (outlineMode ? 200 : (ri * 53) % 360);
+    const circleAlpha = outlineMode ? 0.08 : theme === "light" ? 0.14 : 0.1;
+    const vectorAlpha = outlineMode ? 0.18 : theme === "light" ? 0.32 : 0.24;
+
     let raf = 0;
 
     function frame() {
-      const ms = modelsRef.current;
-      if (ms.length === 0) return;
-      const refN = Math.max(...ms.map((m) => m.fftN), 64);
-      const w = width;
-      const h = height;
       c.fillStyle = theme === "light" ? "#f1f5f9" : "#06060a";
       c.fillRect(0, 0, w, h);
 
-      const { minX, minY, maxX, maxY } = unionBounds(ms, maxTerms);
-      const pad = 28;
-      const bw = maxX - minX || 1;
-      const bh = maxY - minY || 1;
-      const scale = Math.min((w - pad * 2) / bw, (h - pad * 2) / bh);
-      const ox = w / 2 - ((minX + maxX) / 2) * scale;
-      const oy = h / 2 - ((minY + maxY) / 2) * scale;
-      const map = (p: { x: number; y: number }) => ({
-        x: ox + p.x * scale,
-        y: oy + p.y * scale,
-      });
-
-      tRef.current += ((2 * Math.PI) / refN) * speed * 0.4;
+      tRef.current += dt;
       const t = tRef.current;
-      const cap = maxTerms;
 
       while (traceRefs.current.length < ms.length) traceRefs.current.push([]);
       traceRefs.current.length = ms.length;
 
       if (showCircles || showVectors) {
+        c.lineWidth = 1;
         ms.forEach((m, ri) => {
-          const hue = (ri * 53) % 360;
+          const hue = hueFor(ri);
+          const circleStroke =
+            theme === "light" ? `hsla(${hue}, 35%, 55%, ${circleAlpha})` : `hsla(${hue}, 40%, 70%, ${circleAlpha})`;
+          const vectorStroke =
+            theme === "light" ? `hsla(${hue}, 75%, 42%, ${vectorAlpha})` : `hsla(${hue}, 80%, 60%, ${vectorAlpha})`;
           const C = map(m.centroid);
           let x = C.x;
           let y = C.y;
-          for (let k = 0; k < Math.min(cap, m.coeffsRe.length); k++) {
+          const n = Math.min(caps[ri], m.coeffsRe.length);
+          const vectors = new Path2D();
+          vectors.moveTo(x, y);
+          for (let k = 0; k < n; k++) {
             const ck = m.coeffsRe[k];
             const sk = m.coeffsIm[k];
-            const freq = m.freqs[k];
             const r = Math.hypot(ck, sk) * scale;
-            const angle = freq * t + Math.atan2(sk, ck);
+            const angle = m.freqs[k] * t + Math.atan2(sk, ck);
             const nx = x + r * Math.cos(angle);
             const ny = y + r * Math.sin(angle);
             if (showCircles && r > 0.4) {
-              c.strokeStyle =
-                theme === "light"
-                  ? `hsla(${hue}, 35%, 55%, 0.14)`
-                  : `hsla(${hue}, 40%, 70%, 0.1)`;
-              c.lineWidth = 1;
+              c.strokeStyle = circleStroke;
               c.beginPath();
               c.arc(x, y, r, 0, Math.PI * 2);
               c.stroke();
             }
-            if (showVectors) {
-              c.strokeStyle =
-                theme === "light"
-                  ? `hsla(${hue}, 75%, 42%, 0.32)`
-                  : `hsla(${hue}, 80%, 60%, 0.24)`;
-              c.lineWidth = 1;
-              c.beginPath();
-              c.moveTo(x, y);
-              c.lineTo(nx, ny);
-              c.stroke();
-            }
+            vectors.lineTo(nx, ny);
             x = nx;
             y = ny;
+          }
+          if (showVectors) {
+            c.strokeStyle = vectorStroke;
+            c.stroke(vectors);
           }
         });
       }
 
       if (showPath) {
+        c.lineWidth = lineWidth;
+        c.lineJoin = "round";
+        c.lineCap = "round";
         ms.forEach((m, ri) => {
           const tr = traceRefs.current[ri];
           if (!tr) return;
-          const p0 = epicyclePosition(m, t, cap);
-          tr.unshift(map(p0));
-          if (tr.length > 8000) tr.pop();
-        });
-
-        ms.forEach((m, ri) => {
-          const tr = traceRefs.current[ri];
-          if (!tr || tr.length < 2) return;
+          tr.unshift(epicyclePosition(m, t, caps[ri]));
+          if (tr.length > traceCap) tr.length = traceCap;
+          if (tr.length < 2) return;
           const lim = Math.max(2, Math.floor(tr.length * scrub));
-          const hue = (ri * 53) % 360;
+          const hue = hueFor(ri);
           c.beginPath();
-          for (let i = 0; i < lim; i++) {
-            const p = tr[i];
-            if (!p) continue;
-            if (i === 0) c.moveTo(p.x, p.y);
-            else c.lineTo(p.x, p.y);
-          }
-          c.strokeStyle =
-            theme === "light"
-              ? `hsl(${hue} 62% 38%)`
-              : `hsl(${hue} 70% 62%)`;
-          c.lineWidth = lineWidth;
-          c.lineJoin = "round";
-          c.lineCap = "round";
+          c.moveTo(ox + tr[0].x * scale, oy + tr[0].y * scale);
+          for (let i = 1; i < lim; i++) c.lineTo(ox + tr[i].x * scale, oy + tr[i].y * scale);
+          c.strokeStyle = theme === "light" ? `hsl(${hue} 62% ${outlineMode ? 30 : 38}%)` : `hsl(${hue} 70% 62%)`;
           c.stroke();
         });
       }
@@ -190,8 +177,8 @@ export function FourierVisualizer({ className, width, height, theme = "light" }:
     return () => cancelAnimationFrame(raf);
   }, [
     model,
-    regionModels,
-    featureRegions,
+    models,
+    outlineMode,
     maxTerms,
     speed,
     showCircles,

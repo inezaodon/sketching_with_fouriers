@@ -2,6 +2,7 @@ import { create } from "zustand";
 import type { FourierModel, Point2 } from "./fourier";
 import { buildDemoProfessorPath } from "./demoPath";
 import { buildFourierModel } from "./fourier";
+import { buildOutlineModels } from "./outlineFourier";
 import { buildRegionModels } from "./regionFourier";
 
 const DEFAULT_SAMPLES = 512;
@@ -13,6 +14,11 @@ type SketchState = {
   /** When >1, epicycle canvas uses one model per spatial region (cuts at largest gaps). */
   featureRegions: number;
   regionModels: FourierModel[];
+  /** Separate closed outlines from the pipeline (one Fourier series each). */
+  outlines: Point2[][];
+  outlineModels: FourierModel[];
+  /** `outlines` = one epicycle stack per traced outline (no jump lines); `path` = single stitched path. */
+  drawMode: "outlines" | "path";
   /** Last FFT origin from portrait upload (image center); used when recomputing regions. */
   lastFftOrigin: Point2 | null;
   /** Public path or blob: URL for the raster shown next to traces. */
@@ -34,6 +40,7 @@ type SketchState = {
   scrub: number;
   setMaxTerms: (n: number) => void;
   setFeatureRegions: (n: number) => void;
+  setDrawMode: (m: "outlines" | "path") => void;
   setSpeed: (s: number) => void;
   setEdgeThreshold: (n: number) => void;
   setShowCircles: (v: boolean) => void;
@@ -50,6 +57,7 @@ type SketchState = {
       imageSize?: { w: number; h: number } | null;
       lineArtDataUrl?: string | null;
       edgeMaskDataUrl?: string | null;
+      outlines?: Point2[][];
     },
   ) => void;
   resetDemo: () => void;
@@ -73,6 +81,9 @@ export const useSketchStore = create<SketchState>((set, get) => ({
   model: computeModel(demo),
   featureRegions: DEFAULT_FEATURE_REGIONS,
   regionModels: computeRegionModels(demo, DEFAULT_FEATURE_REGIONS),
+  outlines: [],
+  outlineModels: [],
+  drawMode: "outlines",
   lastFftOrigin: null,
   originalImageSrc: null,
   lineArtDataUrl: null,
@@ -99,6 +110,7 @@ export const useSketchStore = create<SketchState>((set, get) => ({
       regionModels: computeRegionModels(sourcePath, k),
     });
   },
+  setDrawMode: (m) => set({ drawMode: m }),
   setSpeed: (s) => set({ speed: s }),
   setEdgeThreshold: (n) => set({ edgeThreshold: Math.min(255, Math.max(20, n)) }),
   setOriginalImageSrc: (src) => {
@@ -126,9 +138,13 @@ export const useSketchStore = create<SketchState>((set, get) => ({
         | "lastImageSize"
         | "lineArtDataUrl"
         | "edgeMaskDataUrl"
+        | "outlines"
+        | "outlineModels"
       >
     > = {
       sourcePath: path,
+      outlines: options?.outlines ?? [],
+      outlineModels: buildOutlineModels(options?.outlines ?? []),
       model,
       regionModels,
       lastFftOrigin: fft ? { x: fft.x, y: fft.y } : null,
